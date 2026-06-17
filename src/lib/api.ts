@@ -47,6 +47,8 @@ export const api = {
     request<any[]>(`/faults/common-actions${buildQs(params)}`),
   getFaultDrillDown: (params: FilterParams, faultCode: string) =>
     request<any>(`/faults/drill-down${buildQs({ ...params, faultCode })}`),
+  getTopFaultByAta: (params: FilterParams, ataChapter: string) =>
+    request<any>(`/faults/top-by-ata${buildQs({ ...params, ataChapter })}`),
 
   getKnowledgeEntries: () => request<any[]>('/knowledge/entries'),
   getLowSuccessRateEntries: () => request<any[]>('/knowledge/low-success-rate'),
@@ -66,6 +68,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ candidates }),
     }),
+  initiateReviewFromDrilldown: (params: FilterParams, faultCode: string, reason: string) =>
+    request<any>('/review/initiate-from-drilldown', {
+      method: 'POST',
+      body: JSON.stringify({ faultCode, reason }),
+    }),
+  addTaskFromCaseQuality: (entryId: string) =>
+    request<any>('/review/add-from-case-quality', {
+      method: 'POST',
+      body: JSON.stringify({ entryId }),
+    }),
+  getTaskWorkbench: (params: FilterParams, taskId: string) =>
+    request<any>(`/review/workbench/${taskId}${buildQs(params)}`),
   assignTask: (id: string, assignee: string, dueDate: string) =>
     request<any>(`/review/tasks/${id}/assign`, {
       method: 'POST',

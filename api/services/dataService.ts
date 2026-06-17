@@ -12,6 +12,8 @@ import type {
   CaseQualitySummary,
   FaultDrillDownData,
   CandidateReviewTask,
+  TaskWorkbenchData,
+  InitiateReviewResult,
 } from '../../shared/types.js';
 
 function filterRecords(records: FaultRecord[], filters: Partial<FilterState>): FaultRecord[] {
@@ -300,7 +302,8 @@ export function generateCandidateTasks(
 ): CandidateReviewTask[] {
   const filtered = filterRecords(mockFaultRecords, filters);
   const candidates: CandidateReviewTask[] = [];
-  const existingCodes = new Set(mockReviewTasks.map(t => t.faultCode));
+  const allTasks = getReviewTasks();
+  const existingCodes = new Set(allTasks.map(t => t.faultCode));
 
   const faultMap = new Map<string, {
     desc: string;
@@ -440,9 +443,180 @@ export function addTasksFromCandidates(candidates: CandidateReviewTask[]): Revie
     createdAt: today,
     dueDate: defaultDue,
     completedAt: null,
+    source: 'candidate',
+    reviewReason: c.reason,
   }));
   customAddedTasks = [...customAddedTasks, ...newTasks];
   return newTasks;
+}
+
+export function initiateReviewFromDrilldown(
+  filters: Partial<FilterState>,
+  faultCode: string,
+  reason: string
+): InitiateReviewResult {
+  const allTasks = getReviewTasks();
+  const existing = allTasks.find(t => t.faultCode === faultCode);
+  if (existing) {
+    return {
+      created: false,
+      task: existing,
+      message: `故障 ${faultCode} 已在复盘清单中（任务 ${existing.id}），已为您定位到该任务`,
+    };
+  }
+
+  const drillDown = getFaultDrillDown(filters, faultCode);
+  if (!drillDown) {
+    return { created: false, task: null, message: `未找到故障 ${faultCode} 的数据` };
+  }
+
+  const today = new Date().toISOString().split('T')[0];
+  const plus7 = new Date();
+  plus7.setDate(plus7.getDate() + 7);
+  const defaultDue = plus7.toISOString().split('T')[0];
+
+  const newTask: ReviewTask = {
+    id: `D${String(customAddedTasks.length + 1).padStart(4, '0')}`,
+    type: drillDown.needReview && drillDown.avgDowntime >= 5 ? 'timeout' : 'repeat',
+    faultCode,
+    title: drillDown.faultDescription,
+    ataChapter: drillDown.ataChapter,
+    occurrenceCount: drillDown.totalCount,
+    avgDowntime: drillDown.avgDowntime,
+    assignee: null,
+    status: 'pending',
+    rootCause: null,
+    tipRevision: null,
+    trainingReminder: { content: '', sent: false },
+    createdAt: today,
+    dueDate: defaultDue,
+    completedAt: null,
+    source: 'drilldown',
+    reviewReason: reason || drillDown.reviewReason,
+  };
+  customAddedTasks = [...customAddedTasks, newTask];
+  return { created: true, task: newTask, message: `已从故障钻取发起复盘任务 ${newTask.id}` };
+}
+
+export function addTaskFromCaseQuality(entryId: string): InitiateReviewResult {
+  const entry = mockKnowledgeEntries.find(e => e.id === entryId);
+  if (!entry) {
+    return { created: false, task: null, message: `未找到案例 ${entryId}` };
+  }
+
+  const allTasks = getReviewTasks();
+  const existing = allTasks.find(t => t.faultCode === entry.faultCode);
+  if (existing) {
+    return {
+      created: false,
+      task: existing,
+      message: `故障 ${entry.faultCode} 已在复盘清单中（任务 ${existing.id}），已为您定位到该任务`,
+    };
+  }
+
+  const relatedRecords = mockFaultRecords.filter(r => r.faultCode === entry.faultCode);
+  const totalCount = relatedRecords.length;
+  const avgDowntime = totalCount > 0
+    ? parseFloat((relatedRecords.reduce((s, r) => s + r.downtimeHours, 0) / totalCount).toFixed(1))
+    : 0;
+
+  const missingCount =
+    (entry.hasManualReference ? 0 : 1) +
+    (entry.hasReleaseConclusion ? 0 : 1) +
+    (entry.hasFollowUp ? 0 : 1);
+
+  const today = new Date().toISOString().split('T')[0];
+  const plus7 = new Date();
+  plus7.setDate(plus7.getDate() + 7);
+  const defaultDue = plus7.toISOString().split('T')[0];
+
+  const newTask: ReviewTask = {
+    id: `Q${String(customAddedTasks.length + 1).padStart(4, '0')}`,
+    type: 'repeat',
+    faultCode: entry.faultCode,
+    title: `${entry.title}（质量整改）`,
+    ataChapter: entry.ataChapter,
+    occurrenceCount: totalCount,
+    avgDowntime,
+    assignee: null,
+    status: 'pending',
+    rootCause: null,
+    tipRevision: null,
+    trainingReminder: { content: '', sent: false },
+    createdAt: today,
+    dueDate: defaultDue,
+    completedAt: null,
+    source: 'case_quality',
+    reviewReason: `案例质量缺失 ${missingCount} 项（手册依据${entry.hasManualReference ? '✓' : '✗'} / 放行结论${entry.hasReleaseConclusion ? '✓' : '✗'} / 后续跟踪${entry.hasFollowUp ? '✓' : '✗'}），引用次数 ${entry.referenceCount}，需复盘整改`,
+  };
+  customAddedTasks = [...customAddedTasks, newTask];
+  return { created: true, task: newTask, message: `已将案例 ${entryId} 加入复盘清单（任务 ${newTask.id}）` };
+}
+
+export function getTaskWorkbench(
+  filters: Partial<FilterState>,
+  taskId: string
+): TaskWorkbenchData | null {
+  const allTasks = getReviewTasks();
+  const task = allTasks.find(t => t.id === taskId);
+  if (!task) return null;
+
+  const drillDown = getFaultDrillDown(filters, task.faultCode);
+
+  const knowledgeCases = mockKnowledgeEntries.filter(e => e.faultCode === task.faultCode);
+
+  const relatedRecords = filterRecords(mockFaultRecords, filters).filter(r => r.faultCode === task.faultCode);
+  const actionMap = new Map<string, { count: number; success: number }>();
+  relatedRecords.forEach(r => {
+    r.actions.forEach(a => {
+      if (!actionMap.has(a)) actionMap.set(a, { count: 0, success: 0 });
+      const e = actionMap.get(a)!;
+      e.count++;
+      if (r.success) e.success++;
+    });
+  });
+  const suggestedActions = Array.from(actionMap.entries())
+    .map(([action, d]) => ({
+      action,
+      count: d.count,
+      successRate: parseFloat(((d.success / d.count) * 100).toFixed(1)),
+    }))
+    .sort((a, b) => b.successRate - a.successRate || b.count - a.count)
+    .map(a => `${a.action}（历史使用 ${a.count} 次，成功率 ${a.successRate}%）`);
+
+  return {
+    task,
+    drillDown,
+    knowledgeCases,
+    suggestedActions,
+  };
+}
+
+export function getTopFaultByAta(filters: Partial<FilterState>, ataChapter: string): TopFault | null {
+  const filtered = filterRecords(mockFaultRecords, filters).filter(r => r.ataChapter === ataChapter);
+  if (filtered.length === 0) return null;
+
+  const faultMap = new Map<string, { desc: string; count: number; totalDowntime: number }>();
+  filtered.forEach(r => {
+    if (!faultMap.has(r.faultCode)) {
+      faultMap.set(r.faultCode, { desc: r.faultDescription, count: 0, totalDowntime: 0 });
+    }
+    const e = faultMap.get(r.faultCode)!;
+    e.count++;
+    e.totalDowntime += r.downtimeHours;
+  });
+
+  const top = Array.from(faultMap.entries())
+    .map(([code, d]) => ({
+      faultCode: code,
+      faultDescription: d.desc,
+      count: d.count,
+      avgDowntime: parseFloat((d.totalDowntime / d.count).toFixed(1)),
+      ataChapter,
+    }))
+    .sort((a, b) => b.count - a.count);
+
+  return top[0] || null;
 }
 
 export function getOptions() {

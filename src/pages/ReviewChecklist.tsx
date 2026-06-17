@@ -27,8 +27,27 @@ import {
   GripVertical,
   Target,
   Shield,
+  X,
+  BarChart3,
+  Users,
+  Activity,
+  BookOpen,
+  Wrench,
+  Rocket,
+  MonitorCog,
 } from 'lucide-react';
-import type { ReviewTask, CandidateReviewTask } from '../../shared/types';
+import type { ReviewTask, CandidateReviewTask, TaskWorkbenchData } from '../../shared/types';
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
 
 type StatusFilter = 'all' | 'pending' | 'in_progress' | 'completed';
 type TabView = 'active' | 'candidates' | 'closed';
@@ -45,6 +64,10 @@ export default function ReviewChecklist() {
   const [timeoutThreshold, setTimeoutThreshold] = useState(5);
   const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
   const [loadingCandidates, setLoadingCandidates] = useState(false);
+
+  const [workbenchTaskId, setWorkbenchTaskId] = useState<string | null>(null);
+  const [workbenchData, setWorkbenchData] = useState<TaskWorkbenchData | null>(null);
+  const [loadingWorkbench, setLoadingWorkbench] = useState(false);
 
   const baseParams = {
     aircraftType: filters.aircraftType,
@@ -96,6 +119,39 @@ export default function ReviewChecklist() {
 
   function toggleExpand(id: string) {
     setExpanded(expanded === id ? null : id);
+  }
+
+  async function openWorkbench(taskId: string) {
+    setWorkbenchTaskId(taskId);
+    setWorkbenchData(null);
+    setLoadingWorkbench(true);
+    try {
+      const data = await api.getTaskWorkbench(baseParams, taskId);
+      setWorkbenchData(data);
+    } finally {
+      setLoadingWorkbench(false);
+    }
+  }
+
+  function closeWorkbench() {
+    setWorkbenchTaskId(null);
+    setWorkbenchData(null);
+  }
+
+  function sourceLabel(source: ReviewTask['source']) {
+    const map = {
+      manual: { label: '固定清单', cls: 'bg-slate-500/15 text-slate-300 border-slate-500/25', icon: ClipboardList },
+      candidate: { label: '候选生成', cls: 'bg-tech-cyan-500/15 text-tech-cyan-400 border-tech-cyan-500/25', icon: Sparkles },
+      drilldown: { label: '钻取发起', cls: 'bg-alert-orange-500/15 text-alert-orange-400 border-alert-orange-500/25', icon: Rocket },
+      case_quality: { label: '案例质量', cls: 'bg-purple-500/15 text-purple-400 border-purple-500/25', icon: Shield },
+    };
+    const m = map[source];
+    const Icon = m.icon;
+    return (
+      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium border ${m.cls}`}>
+        <Icon className="w-3 h-3" /> {m.label}
+      </span>
+    );
   }
 
   async function handleAssign(id: string, assignee: string, dueDate: string) {
@@ -462,6 +518,7 @@ export default function ReviewChecklist() {
                           <Timer className="w-3 h-3" /> 超时
                         </span>
                       )}
+                      {sourceLabel(task.source)}
                       <div className="flex-1 min-w-0">
                         <h4 className="text-slate-100 font-semibold flex items-center gap-2">
                           <span className="font-mono text-tech-cyan-400 text-sm">{task.faultCode}</span>
@@ -479,6 +536,16 @@ export default function ReviewChecklist() {
                         </div>
                       </div>
                       <div className="flex items-center gap-4 flex-shrink-0 text-xs">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openWorkbench(task.id);
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-tech-cyan-500/10 text-tech-cyan-400 border border-tech-cyan-500/20 hover:bg-tech-cyan-500/20 transition-colors"
+                        >
+                          <MonitorCog className="w-3.5 h-3.5" />
+                          工作台
+                        </button>
                         {task.assignee ? (
                           <span className="flex items-center gap-1.5 text-slate-300">
                             <User className="w-3.5 h-3.5 text-slate-500" />
@@ -680,6 +747,7 @@ export default function ReviewChecklist() {
                           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-green-500/15 text-green-400 border border-green-500/25">
                             <CheckCircle2 className="w-3 h-3" /> 已闭环
                           </span>
+                          {sourceLabel(task.source)}
                           <span className="font-mono text-tech-cyan-400 text-sm font-medium">
                             {task.faultCode}
                           </span>
@@ -751,6 +819,208 @@ export default function ReviewChecklist() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {workbenchTaskId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/60 backdrop-blur-sm animate-fade-in-up">
+            <div className="bg-deep-blue-800 border border-white/10 rounded-3xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col">
+              <div className="flex items-start justify-between p-6 border-b border-white/5 bg-gradient-to-r from-deep-blue-800 to-deep-blue-700/50">
+                <div>
+                  {workbenchData && (
+                    <>
+                      <div className="flex items-center gap-3 mb-2 flex-wrap">
+                        {statusBadge(workbenchData.task.status)}
+                        {sourceLabel(workbenchData.task.source)}
+                        <span className="font-mono text-lg text-tech-cyan-400 bg-tech-cyan-500/10 px-3 py-1 rounded-lg border border-tech-cyan-500/20">
+                          {workbenchData.task.faultCode}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-md bg-deep-blue-600/60 text-xs text-slate-300 font-mono">
+                          {workbenchData.task.ataChapter}
+                        </span>
+                      </div>
+                      <h2 className="text-xl font-bold text-white">{workbenchData.task.title}</h2>
+                      {workbenchData.task.reviewReason && (
+                        <p className="text-sm text-slate-400 mt-2 max-w-2xl">
+                          <AlertCircle className="w-4 h-4 inline mr-1.5 -mt-0.5 text-alert-orange-400" />
+                          {workbenchData.task.reviewReason}
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+                <button
+                  onClick={closeWorkbench}
+                  className="p-2.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors flex-shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {loadingWorkbench ? (
+                  <div className="h-96 flex items-center justify-center text-slate-400 animate-pulse">
+                    加载工作台数据中...
+                  </div>
+                ) : workbenchData ? (
+                  <>
+                    {workbenchData.drillDown ? (
+                      <>
+                        <div className="p-5 rounded-2xl bg-deep-blue-700/30 border border-white/5">
+                          <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-tech-cyan-400" />
+                            关联故障月度趋势
+                          </h4>
+                          <div className="h-52">
+                            <ResponsiveContainer width="100%" height="100%">
+                              <ComposedChart data={workbenchData.drillDown.monthlyTrend}>
+                                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
+                                <YAxis yAxisId="left" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
+                                <YAxis yAxisId="right" orientation="right" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
+                                <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#fff' }} />
+                                <Legend wrapperStyle={{ fontSize: 11 }} />
+                                <Bar yAxisId="left" dataKey="count" name="故障次数" fill="#FF6B35" radius={[4, 4, 0, 0]} opacity={0.85} />
+                                <Line yAxisId="right" type="monotone" dataKey="avgDowntime" name="平均停场h" stroke="#00D4AA" strokeWidth={2.5} dot={{ fill: '#00D4AA', r: 4 }} />
+                              </ComposedChart>
+                            </ResponsiveContainer>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-5">
+                          <div className="p-5 rounded-2xl bg-deep-blue-700/30 border border-white/5">
+                            <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                              <Users className="w-4 h-4 text-blue-400" />
+                              涉及飞机（{workbenchData.drillDown.involvedAircraft.length} 架）
+                            </h4>
+                            <div className="max-h-64 overflow-y-auto space-y-2">
+                              {workbenchData.drillDown.involvedAircraft.slice(0, 10).map((ac) => (
+                                <div key={ac.aircraftReg} className="flex items-center justify-between p-2.5 rounded-lg bg-deep-blue-800/50 border border-white/5">
+                                  <div>
+                                    <span className="font-mono text-white font-medium text-sm">{ac.aircraftReg}</span>
+                                    <span className="text-xs text-slate-400 ml-2">{ac.aircraftType}</span>
+                                  </div>
+                                  <div className="text-right">
+                                    <span className="text-alert-orange-400 font-mono font-semibold text-sm">{ac.count}</span>
+                                    <span className="text-[10px] text-slate-500 ml-1">次 · {ac.totalDowntime}h</span>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="p-5 rounded-2xl bg-deep-blue-700/30 border border-white/5">
+                            <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                              <BarChart3 className="w-4 h-4 text-alert-orange-400" />
+                              停场时间分布
+                            </h4>
+                            <div className="h-52">
+                              <ResponsiveContainer width="100%" height="100%">
+                                <ComposedChart data={workbenchData.drillDown.downtimeDistribution} layout="vertical">
+                                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                                  <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
+                                  <YAxis type="category" dataKey="range" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} width={70} />
+                                  <Tooltip contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }} labelStyle={{ color: '#fff' }} />
+                                  <Bar dataKey="count" name="次数" fill="#FF6B35" radius={[0, 4, 4, 0]} opacity={0.8} />
+                                </ComposedChart>
+                              </ResponsiveContainer>
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="p-5 rounded-2xl bg-deep-blue-700/30 border border-white/5 text-center text-slate-400 text-sm">
+                        暂无关联故障钻取数据
+                      </div>
+                    )}
+
+                    <div className="p-5 rounded-2xl bg-deep-blue-700/30 border border-white/5">
+                      <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                        <BookOpen className="w-4 h-4 text-tech-cyan-400" />
+                        引用过的知识案例（{workbenchData.knowledgeCases.length} 条）
+                      </h4>
+                      {workbenchData.knowledgeCases.length === 0 ? (
+                        <p className="text-sm text-slate-500 text-center py-4">暂无关联知识案例</p>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-3">
+                          {workbenchData.knowledgeCases.map((entry) => (
+                            <div key={entry.id} className="p-3.5 rounded-xl bg-deep-blue-800/50 border border-white/5 hover:border-tech-cyan-500/20 transition-colors">
+                              <div className="flex items-start justify-between gap-2">
+                                <h5 className="text-sm font-medium text-slate-100 line-clamp-2 flex-1">{entry.title}</h5>
+                                <span className={`text-xs font-mono font-semibold flex-shrink-0 ${
+                                  entry.successRate >= 80 ? 'text-tech-cyan-400' :
+                                  entry.successRate >= 60 ? 'text-yellow-400' : 'text-alert-orange-400'
+                                }`}>
+                                  {entry.successRate}%
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-400">
+                                <span className="flex items-center gap-1">
+                                  <BookOpen className="w-3 h-3" />
+                                  {entry.category}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  引用 {entry.referenceCount} 次
+                                </span>
+                                <span>{entry.lastUpdated}</span>
+                              </div>
+                              <div className="flex items-center gap-1.5 mt-2">
+                                {entry.hasManualReference ? (
+                                  <span className="text-[10px] text-tech-cyan-400">手册✓</span>
+                                ) : (
+                                  <span className="text-[10px] text-alert-orange-400">手册✗</span>
+                                )}
+                                {entry.hasReleaseConclusion ? (
+                                  <span className="text-[10px] text-tech-cyan-400">放行✓</span>
+                                ) : (
+                                  <span className="text-[10px] text-alert-orange-400">放行✗</span>
+                                )}
+                                {entry.hasFollowUp ? (
+                                  <span className="text-[10px] text-tech-cyan-400">跟踪✓</span>
+                                ) : (
+                                  <span className="text-[10px] text-alert-orange-400">跟踪✗</span>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-deep-blue-700/30 border border-white/5">
+                      <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                        <Wrench className="w-4 h-4 text-tech-cyan-400" />
+                        建议排故动作（按历史成功率排序）
+                      </h4>
+                      {workbenchData.suggestedActions.length === 0 ? (
+                        <p className="text-sm text-slate-500 text-center py-4">暂无建议动作</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {workbenchData.suggestedActions.map((action, i) => (
+                            <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-deep-blue-800/50 border border-white/5">
+                              <span className="w-6 h-6 rounded-full bg-tech-cyan-500/15 text-tech-cyan-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                {i + 1}
+                              </span>
+                              <span className="text-sm text-slate-200">{action}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    {workbenchData.drillDown?.needReview && (
+                      <div className="p-4 rounded-2xl bg-alert-orange-500/10 border border-alert-orange-500/20 flex items-center gap-3">
+                        <AlertCircle className="w-5 h-5 text-alert-orange-400 flex-shrink-0" />
+                        <div>
+                          <p className="text-sm text-alert-orange-300 font-medium">建议复盘原因</p>
+                          <p className="text-xs text-alert-orange-300/80 mt-0.5">{workbenchData.drillDown.reviewReason}</p>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : null}
+              </div>
+            </div>
           </div>
         )}
       </div>

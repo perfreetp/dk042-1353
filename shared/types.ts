@@ -45,6 +45,21 @@ export interface ReviewTask {
   createdAt: string;
   dueDate: string;
   completedAt: string | null;
+  source: 'manual' | 'candidate' | 'drilldown' | 'case_quality';
+  reviewReason?: string;
+}
+
+export interface TaskWorkbenchData {
+  task: ReviewTask;
+  drillDown: FaultDrillDownData | null;
+  knowledgeCases: KnowledgeEntry[];
+  suggestedActions: string[];
+}
+
+export interface InitiateReviewResult {
+  created: boolean;
+  task: ReviewTask | null;
+  message: string;
 }
 
 export interface FilterState {

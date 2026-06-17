@@ -16,6 +16,10 @@ import {
   getFaultDrillDown,
   generateCandidateTasks,
   addTasksFromCandidates,
+  initiateReviewFromDrilldown,
+  addTaskFromCaseQuality,
+  getTaskWorkbench,
+  getTopFaultByAta,
 } from '../services/dataService.js';
 
 const router = Router();
@@ -74,6 +78,16 @@ router.get('/faults/drill-down', (req: Request, res: Response) => {
   res.json({ success: true, data: result });
 });
 
+router.get('/faults/top-by-ata', (req: Request, res: Response) => {
+  const ataChapter = req.query.ataChapter as string;
+  if (!ataChapter) {
+    res.status(400).json({ success: false, error: 'ataChapter is required' });
+    return;
+  }
+  const result = getTopFaultByAta(parseFilters(req), ataChapter);
+  res.json({ success: true, data: result });
+});
+
 router.get('/knowledge/entries', (_req: Request, res: Response) => {
   res.json({ success: true, data: getKnowledgeEntries() });
 });
@@ -106,6 +120,36 @@ router.post('/review/add-candidates', (req: Request, res: Response) => {
     return;
   }
   const result = addTasksFromCandidates(candidates);
+  res.json({ success: true, data: result });
+});
+
+router.post('/review/initiate-from-drilldown', (req: Request, res: Response) => {
+  const { faultCode, reason } = req.body;
+  if (!faultCode) {
+    res.status(400).json({ success: false, error: 'faultCode is required' });
+    return;
+  }
+  const result = initiateReviewFromDrilldown(parseFilters(req), faultCode, reason || '');
+  res.json({ success: true, data: result });
+});
+
+router.post('/review/add-from-case-quality', (req: Request, res: Response) => {
+  const { entryId } = req.body;
+  if (!entryId) {
+    res.status(400).json({ success: false, error: 'entryId is required' });
+    return;
+  }
+  const result = addTaskFromCaseQuality(entryId);
+  res.json({ success: true, data: result });
+});
+
+router.get('/review/workbench/:taskId', (req: Request, res: Response) => {
+  const { taskId } = req.params;
+  const result = getTaskWorkbench(parseFilters(req), taskId);
+  if (!result) {
+    res.status(404).json({ success: false, error: 'Task not found' });
+    return;
+  }
   res.json({ success: true, data: result });
 });
 

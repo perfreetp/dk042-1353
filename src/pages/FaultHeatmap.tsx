@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import FilterBar from '@/components/FilterBar';
 import StatCard from '@/components/StatCard';
@@ -19,6 +20,8 @@ import {
   CheckCircle2,
   XCircle,
   ChevronRight,
+  Rocket,
+  Loader2,
 } from 'lucide-react';
 import type {
   FaultStatistics,
@@ -45,6 +48,7 @@ import {
 
 export default function FaultHeatmap() {
   const { filters } = useAppStore();
+  const navigate = useNavigate();
   const [stats, setStats] = useState<FaultStatistics | null>(null);
   const [heatmap, setHeatmap] = useState<HeatmapData[]>([]);
   const [topFaults, setTopFaults] = useState<TopFault[]>([]);
@@ -53,6 +57,8 @@ export default function FaultHeatmap() {
   const [drillDown, setDrillDown] = useState<FaultDrillDownData | null>(null);
   const [showModal, setShowModal] = useState(false);
   const [loadingDrill, setLoadingDrill] = useState(false);
+  const [initiating, setInitiating] = useState(false);
+  const [initiateMsg, setInitiateMsg] = useState<string | null>(null);
 
   const baseParams = {
     aircraftType: filters.aircraftType,
@@ -95,6 +101,7 @@ export default function FaultHeatmap() {
     setLoadingDrill(true);
     setShowModal(true);
     setDrillDown(null);
+    setInitiateMsg(null);
     try {
       const data = await api.getFaultDrillDown(baseParams, faultCode);
       setDrillDown(data);
@@ -103,9 +110,51 @@ export default function FaultHeatmap() {
     }
   }
 
+  async function openDrillDownByAta(ataChapter: string) {
+    setLoadingDrill(true);
+    setShowModal(true);
+    setDrillDown(null);
+    setInitiateMsg(null);
+    try {
+      const topFault = await api.getTopFaultByAta(baseParams, ataChapter);
+      if (topFault) {
+        const data = await api.getFaultDrillDown(baseParams, topFault.faultCode);
+        setDrillDown(data);
+      } else {
+        setLoadingDrill(false);
+        setShowModal(false);
+      }
+    } finally {
+      setLoadingDrill(false);
+    }
+  }
+
+  async function handleInitiateReview() {
+    if (!drillDown) return;
+    setInitiating(true);
+    setInitiateMsg(null);
+    try {
+      const result = await api.initiateReviewFromDrilldown(
+        baseParams,
+        drillDown.faultCode,
+        drillDown.reviewReason
+      );
+      setInitiateMsg(result.message);
+      if (result.created) {
+        setTimeout(() => {
+          closeModal();
+          navigate('/review-checklist');
+        }, 1200);
+      }
+    } finally {
+      setInitiating(false);
+    }
+  }
+
   function closeModal() {
     setShowModal(false);
     setDrillDown(null);
+    setInitiateMsg(null);
   }
 
   const trendMax = Math.max(
@@ -208,10 +257,7 @@ export default function FaultHeatmap() {
               {heatmap.map((item) => (
                 <div
                   key={item.ataChapter}
-                  onClick={() => {
-                    const topFault = topFaults.find((f) => f.ataChapter === item.ataChapter);
-                    if (topFault) openDrillDown(topFault.faultCode);
-                  }}
+                  onClick={() => openDrillDownByAta(item.ataChapter)}
                   className={`group relative p-3 rounded-xl border cursor-pointer transition-all duration-200 hover:scale-[1.03] hover:shadow-lg hover:z-10 ${getHeatColor(
                     item.count
                   )}`}
@@ -425,12 +471,37 @@ export default function FaultHeatmap() {
                     </>
                   )}
                 </div>
-                <button
-                  onClick={closeModal}
-                  className="p-2.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
-                >
-                  <X className="w-5 h-5" />
-                </button>
+                <div className="flex items-center gap-3 flex-shrink-0">
+                  {initiateMsg && (
+                    <span className={`text-xs px-3 py-1.5 rounded-lg border ${
+                      initiateMsg.includes('已在')
+                        ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/25'
+                        : 'bg-tech-cyan-500/10 text-tech-cyan-400 border-tech-cyan-500/25'
+                    }`}>
+                      {initiateMsg}
+                    </span>
+                  )}
+                  {drillDown && (
+                    <button
+                      onClick={handleInitiateReview}
+                      disabled={initiating || initiateMsg?.includes('已在')}
+                      className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-alert-orange-500 to-alert-orange-600 text-white shadow-lg shadow-alert-orange-500/20 hover:from-alert-orange-400 hover:to-alert-orange-500 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {initiating ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Rocket className="w-4 h-4" />
+                      )}
+                      发起复盘
+                    </button>
+                  )}
+                  <button
+                    onClick={closeModal}
+                    className="p-2.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition-colors"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
 
               <div className="flex-1 overflow-y-auto p-6 space-y-6">

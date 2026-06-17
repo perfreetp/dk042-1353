@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import StatCard from '@/components/StatCard';
 import { api } from '@/lib/api';
@@ -13,6 +14,8 @@ import {
   AlertCircle,
   Shield,
   Flame,
+  Rocket,
+  Loader2,
 } from 'lucide-react';
 import type {
   KnowledgeEntry,
@@ -33,9 +36,13 @@ import {
 } from 'recharts';
 
 export default function CaseQuality() {
+  const navigate = useNavigate();
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [qualitySummaries, setQualitySummaries] = useState<CaseQualitySummary[]>([]);
   const [lowSuccess, setLowSuccess] = useState<KnowledgeEntry[]>([]);
+  const [addedEntryIds, setAddedEntryIds] = useState<Set<string>>(new Set());
+  const [addingId, setAddingId] = useState<string | null>(null);
+  const [addMsg, setAddMsg] = useState<string | null>(null);
 
   const totalEntries = entries.length;
   const totalRefs = entries.reduce((s, e) => s + e.referenceCount, 0);
@@ -71,6 +78,22 @@ export default function CaseQuality() {
       setLowSuccess(l);
     });
   }, []);
+
+  async function handleAddToReview(q: CaseQualitySummary) {
+    setAddingId(q.entryId);
+    setAddMsg(null);
+    try {
+      const result = await api.addTaskFromCaseQuality(q.entryId);
+      setAddMsg(result.message);
+      if (result.created) {
+        const s = new Set(addedEntryIds);
+        s.add(q.entryId);
+        setAddedEntryIds(s);
+      }
+    } finally {
+      setAddingId(null);
+    }
+  }
 
   return (
     <Layout title="案例质量" subtitle="知识条目引用分析与质量检查报告">
@@ -185,8 +208,21 @@ export default function CaseQuality() {
             </span>
           </div>
           <p className="text-slate-400 text-xs mb-4 ml-7">
-            一行展示同一条案例的所有缺失项，缺手册依据/放行结论/后续跟踪独立显示 ✅ / ❌
+            一行展示同一条案例的所有缺失项，缺手册依据/放行结论/后续跟踪独立显示 ✅ / ❌ · 高频引用且缺失严重可一键加入复盘
           </p>
+          {addMsg && (
+            <div className="mb-4 ml-7 px-3 py-2 rounded-lg text-xs bg-tech-cyan-500/10 text-tech-cyan-400 border border-tech-cyan-500/20 inline-block">
+              {addMsg}
+              {!addMsg.includes('已在') && (
+                <button
+                  onClick={() => navigate('/review-checklist')}
+                  className="ml-2 underline hover:text-tech-cyan-300"
+                >
+                  去复盘清单查看 →
+                </button>
+              )}
+            </div>
+          )}
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -199,6 +235,7 @@ export default function CaseQuality() {
                   <th className="pb-3 font-medium text-center">放行结论</th>
                   <th className="pb-3 font-medium text-center">后续跟踪</th>
                   <th className="pb-3 font-medium">更新日期</th>
+                  <th className="pb-3 font-medium text-center">操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -272,6 +309,35 @@ export default function CaseQuality() {
                       )}
                     </td>
                     <td className="py-3 text-xs text-slate-400">{q.lastUpdated}</td>
+                    <td className="py-3 text-center">
+                      {q.missingCount > 0 ? (
+                        addedEntryIds.has(q.entryId) ? (
+                          <span className="inline-flex items-center gap-1 text-xs text-tech-cyan-400">
+                            <CheckCircle2 className="w-3.5 h-3.5" />
+                            已加入
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => handleAddToReview(q)}
+                            disabled={addingId === q.entryId}
+                            className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50 ${
+                              q.missingCount >= 2 && q.referenceCount >= 20
+                                ? 'bg-gradient-to-r from-alert-orange-500 to-alert-orange-600 text-white shadow-lg shadow-alert-orange-500/15 hover:from-alert-orange-400 hover:to-alert-orange-500'
+                                : 'bg-deep-blue-700/60 text-slate-300 hover:bg-deep-blue-700 border border-white/10'
+                            }`}
+                          >
+                            {addingId === q.entryId ? (
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            ) : (
+                              <Rocket className="w-3.5 h-3.5" />
+                            )}
+                            加入复盘
+                          </button>
+                        )
+                      ) : (
+                        <span className="text-xs text-slate-600">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>

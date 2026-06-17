@@ -174,6 +174,7 @@ export function generateReviewTasks(count = 32): ReviewTask[] {
       createdAt: generateDate(14),
       dueDate: generateDueDate(status),
       completedAt: isCompleted ? generateCompletedAt() : null,
+      source: 'manual',
     });
   }
   return tasks;
