@@ -18,6 +18,8 @@ export interface KnowledgeEntry {
   id: string;
   title: string;
   faultCode: string;
+  ataChapter: string;
+  category: string;
   referenceCount: number;
   successRate: number;
   lastUpdated: string;
@@ -28,19 +30,21 @@ export interface KnowledgeEntry {
 
 export interface ReviewTask {
   id: string;
-  type: 'repeat_fault' | 'timeout_troubleshoot';
+  type: 'repeat' | 'timeout';
   faultCode: string;
-  faultDescription: string;
+  title: string;
+  ataChapter: string;
   occurrenceCount: number;
-  avgDowntimeHours: number;
+  avgDowntime: number;
   thresholdHours?: number;
   assignee: string | null;
   status: 'pending' | 'in_progress' | 'completed';
-  rootCauseAnalysis: string | null;
-  troubleshootingTipRevision: string | null;
-  trainingReminder: boolean;
+  rootCause: string | null;
+  tipRevision: string | null;
+  trainingReminder: { content: string; sent: boolean };
   createdAt: string;
-  dueDate: string | null;
+  dueDate: string;
+  completedAt: string | null;
 }
 
 export interface FilterState {
@@ -99,7 +103,61 @@ export interface QualityIssue {
   reportedDate: string;
 }
 
+export interface CaseQualitySummary {
+  entryId: string;
+  faultCode: string;
+  title: string;
+  category: string;
+  lastUpdated: string;
+  referenceCount: number;
+  hasManualReference: boolean;
+  hasReleaseConclusion: boolean;
+  hasFollowUp: boolean;
+  missingCount: number;
+}
+
 export interface OptionItem {
   value: string;
   label: string;
+}
+
+export interface FaultDrillDownData {
+  faultCode: string;
+  faultDescription: string;
+  ataChapter: string;
+  totalCount: number;
+  avgDowntime: number;
+  monthlyTrend: { month: string; count: number; avgDowntime: number }[];
+  involvedAircraft: {
+    aircraftReg: string;
+    aircraftType: string;
+    count: number;
+    lastOccurrence: string;
+    totalDowntime: number;
+  }[];
+  downtimeDistribution: { range: string; count: number }[];
+  actionDetails: {
+    action: string;
+    count: number;
+    successCount: number;
+    successRate: number;
+    avgDowntime: number;
+  }[];
+  needReview: boolean;
+  reviewReason: string;
+}
+
+export interface CandidateReviewTask {
+  candidateId: string;
+  type: 'repeat' | 'timeout';
+  faultCode: string;
+  faultDescription: string;
+  ataChapter: string;
+  occurrenceCount: number;
+  avgDowntime: number;
+  thresholdHours?: number;
+  involvedAircraftCount: number;
+  lastOccurrence: string;
+  reason: string;
+  selected: boolean;
 }

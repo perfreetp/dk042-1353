@@ -4,293 +4,334 @@ import StatCard from '@/components/StatCard';
 import { api } from '@/lib/api';
 import {
   BookOpen,
-  AlertCircle,
-  FileText,
-  ShieldAlert,
+  TrendingUp,
+  AlertTriangle,
   CheckCircle2,
   XCircle,
-  BookMarked,
-  Send,
-  History,
-  TrendingUp,
+  FileText,
+  Quote,
+  AlertCircle,
+  Shield,
+  Flame,
 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, LineChart, Line } from 'recharts';
-import type { KnowledgeEntry, QualityIssue } from '../../shared/types';
+import type {
+  KnowledgeEntry,
+  CaseQualitySummary,
+} from '../../shared/types';
+
+type QualityTrendPoint = { month: string; passRate: number; issueCount: number };
+import {
+  ComposedChart,
+  Line,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from 'recharts';
 
 export default function CaseQuality() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
+  const [qualitySummaries, setQualitySummaries] = useState<CaseQualitySummary[]>([]);
   const [lowSuccess, setLowSuccess] = useState<KnowledgeEntry[]>([]);
-  const [qualityIssues, setQualityIssues] = useState<QualityIssue[]>([]);
-  const [activeTab, setActiveTab] = useState<'all' | 'missing_manual' | 'missing_release' | 'missing_followup'>('all');
+
+  const totalEntries = entries.length;
+  const totalRefs = entries.reduce((s, e) => s + e.referenceCount, 0);
+  const avgSuccess =
+    totalEntries > 0
+      ? Math.round(entries.reduce((s, e) => s + e.successRate, 0) / totalEntries)
+      : 0;
+  const totalIssues = qualitySummaries.reduce((s, c) => s + c.missingCount, 0);
+
+  const qualityTrend: QualityTrendPoint[] = [
+    { month: '1月', passRate: 82, issueCount: 11 },
+    { month: '2月', passRate: 78, issueCount: 14 },
+    { month: '3月', passRate: 85, issueCount: 9 },
+    { month: '4月', passRate: 88, issueCount: 8 },
+    { month: '5月', passRate: 86, issueCount: 10 },
+    { month: '6月', passRate: 91, issueCount: 7 },
+    { month: '7月', passRate: 89, issueCount: 8 },
+    { month: '8月', passRate: 93, issueCount: 5 },
+    { month: '9月', passRate: 90, issueCount: 6 },
+    { month: '10月', passRate: 92, issueCount: 5 },
+    { month: '11月', passRate: 94, issueCount: 4 },
+    { month: '12月', passRate: 92, issueCount: 5 },
+  ];
 
   useEffect(() => {
     Promise.all([
       api.getKnowledgeEntries(),
+      api.getQualitySummaries(),
       api.getLowSuccessRateEntries(),
-      api.getQualityIssues(),
-    ]).then(([entriesData, lowSuccessData, issuesData]) => {
-      setEntries(entriesData.sort((a, b) => b.referenceCount - a.referenceCount));
-      setLowSuccess(lowSuccessData);
-      setQualityIssues(issuesData);
+    ]).then(([e, q, l]) => {
+      setEntries(e);
+      setQualitySummaries(q);
+      setLowSuccess(l);
     });
   }, []);
 
-  const missingManual = qualityIssues.filter((i) => i.issueType === 'missing_manual');
-  const missingRelease = qualityIssues.filter((i) => i.issueType === 'missing_release');
-  const missingFollowup = qualityIssues.filter((i) => i.issueType === 'missing_followup');
-
-  const filteredIssues =
-    activeTab === 'all' ? qualityIssues : qualityIssues.filter((i) => i.issueType === activeTab);
-
-  const referenceChartData = entries.slice(0, 8).map((e) => ({
-    name: e.faultCode,
-    引用次数: e.referenceCount,
-    成功率: e.successRate,
-  }));
-
-  const qualityTrendData = [
-    { month: '1月', 合格率: 78.5 },
-    { month: '2月', 合格率: 81.2 },
-    { month: '3月', 合格率: 79.8 },
-    { month: '4月', 合格率: 83.4 },
-    { month: '5月', 合格率: 85.1 },
-    { month: '6月', 合格率: 86.7 },
-  ];
-
-  const issueTabs = [
-    { key: 'all', label: '全部问题', count: qualityIssues.length, icon: AlertCircle, color: 'text-slate-300' },
-    { key: 'missing_manual', label: '缺少手册依据', count: missingManual.length, icon: BookMarked, color: 'text-alert-orange-400' },
-    { key: 'missing_release', label: '缺少放行结论', count: missingRelease.length, icon: Send, color: 'text-yellow-400' },
-    { key: 'missing_followup', label: '缺少后续跟踪', count: missingFollowup.length, icon: History, color: 'text-blue-400' },
-  ];
-
   return (
-    <Layout title="案例质量" subtitle="知识条目有效性与案例完整度检查">
+    <Layout title="案例质量" subtitle="知识条目引用分析与质量检查报告">
       <div className="space-y-6">
         <div className="grid grid-cols-4 gap-5">
           <StatCard
             title="知识条目总数"
-            value={entries.length}
+            value={totalEntries}
             unit="条"
             icon={<BookOpen className="w-4 h-4" />}
-            trend={5.8}
-            trendLabel="本月新增"
+            trend={12}
+            trendLabel="较上月"
             gradient="from-tech-cyan-500/20 to-tech-cyan-500/0"
             delay="stagger-1"
           />
           <StatCard
-            title="频繁引用低成功率"
-            value={lowSuccess.length}
-            unit="条"
-            icon={<ShieldAlert className="w-4 h-4" />}
-            gradient="from-alert-orange-500/25 to-alert-orange-500/0"
+            title="累计引用次数"
+            value={totalRefs}
+            unit="次"
+            icon={<Quote className="w-4 h-4" />}
+            gradient="from-blue-500/20 to-blue-500/0"
             delay="stagger-2"
           />
           <StatCard
-            title="有手册依据"
-            value={entries.filter((e) => e.hasManualReference).length}
-            unit="条"
-            icon={<FileText className="w-4 h-4" />}
-            trend={3.2}
-            trendLabel="较上周"
+            title="平均成功率"
+            value={avgSuccess}
+            unit="%"
+            icon={<TrendingUp className="w-4 h-4" />}
             gradient="from-tech-cyan-500/20 to-tech-cyan-500/0"
             delay="stagger-3"
           />
           <StatCard
-            title="案例完整率"
-            value="86.7"
-            unit="%"
-            icon={<CheckCircle2 className="w-4 h-4" />}
-            trend={2.1}
-            trendLabel="较上月"
-            gradient="from-tech-cyan-500/20 to-tech-cyan-500/0"
+            title="待整改问题"
+            value={totalIssues}
+            unit="项"
+            icon={<AlertTriangle className="w-4 h-4" />}
+            gradient="from-alert-orange-500/20 to-alert-orange-500/0"
             delay="stagger-4"
           />
         </div>
 
         <div className="grid grid-cols-3 gap-5">
-          <div className="col-span-2 bg-deep-blue-800/60 backdrop-blur border border-white/5 rounded-2xl p-5 animate-fade-in-up stagger-5">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <TrendingUp className="w-4 h-4 text-tech-cyan-400" />
-                <h3 className="text-white font-semibold">知识条目引用排行</h3>
-              </div>
-              <span className="text-xs text-slate-400">Top 8 · 引用次数 vs 成功率</span>
+          <div className="col-span-2 bg-deep-blue-800/60 backdrop-blur border border-white/5 rounded-2xl p-5 animate-fade-in-up stagger-3">
+            <div className="flex items-center gap-2 mb-5">
+              <TrendingUp className="w-4 h-4 text-tech-cyan-400" />
+              <h3 className="text-white font-semibold">引用次数与合格率趋势</h3>
             </div>
-            <div className="h-72">
+            <div className="h-64">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={referenceChartData} barGap={4}>
+                <ComposedChart data={qualityTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="name" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
+                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
                   <YAxis yAxisId="left" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
-                  <YAxis yAxisId="right" orientation="right" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
+                  <YAxis yAxisId="right" orientation="right" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} domain={[70, 100]} />
                   <Tooltip
                     contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
                     labelStyle={{ color: '#fff' }}
                   />
-                  <Bar yAxisId="left" dataKey="引用次数" fill="#00D4AA" radius={[4, 4, 0, 0]} opacity={0.85} />
-                  <Bar yAxisId="right" dataKey="成功率" fill="#FF6B35" radius={[4, 4, 0, 0]} opacity={0.75} />
-                </BarChart>
+                  <Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar yAxisId="left" dataKey="issueCount" name="问题数" fill="rgba(255,107,53,0.7)" radius={[4, 4, 0, 0]} />
+                  <Line yAxisId="right" type="monotone" dataKey="passRate" name="合格率%" stroke="#00D4AA" strokeWidth={2.5} dot={{ fill: '#00D4AA', r: 3 }} />
+                </ComposedChart>
               </ResponsiveContainer>
             </div>
           </div>
 
-          <div className="bg-deep-blue-800/60 backdrop-blur border border-white/5 rounded-2xl p-5 animate-fade-in-up stagger-6">
+          <div className="bg-deep-blue-800/60 backdrop-blur border border-white/5 rounded-2xl p-5 animate-fade-in-up stagger-4">
             <div className="flex items-center gap-2 mb-4">
-              <TrendingUp className="w-4 h-4 text-tech-cyan-400" />
-              <h3 className="text-white font-semibold">案例质量合格率趋势</h3>
+              <AlertCircle className="w-4 h-4 text-alert-orange-400" />
+              <h3 className="text-white font-semibold">低成功率条目告警</h3>
             </div>
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={qualityTrendData}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
-                  <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} />
-                  <YAxis tick={{ fill: '#94a3b8', fontSize: 11 }} axisLine={{ stroke: 'rgba(255,255,255,0.1)' }} tickLine={false} domain={[70, 100]} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: '#0f172a', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 8, fontSize: 12 }}
-                    labelStyle={{ color: '#fff' }}
-                    formatter={(value: number) => [`${value}%`, '合格率']}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="合格率"
-                    stroke="#00D4AA"
-                    strokeWidth={2.5}
-                    dot={{ fill: '#00D4AA', strokeWidth: 0, r: 4 }}
-                    activeDot={{ r: 6 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+            <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+              {lowSuccess.slice(0, 5).map((entry) => (
+                <div
+                  key={entry.id}
+                  className="p-4 rounded-xl bg-alert-orange-500/10 border border-alert-orange-500/20 hover:border-alert-orange-500/40 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <h4 className="text-sm font-medium text-slate-100 line-clamp-2">
+                        {entry.title}
+                      </h4>
+                      <p className="text-xs text-slate-400 mt-1.5">
+                        {entry.ataChapter} · {entry.category}
+                      </p>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-alert-orange-500/20 text-alert-orange-300 border border-alert-orange-500/30 flex-shrink-0">
+                      {entry.successRate}%
+                    </span>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                    <span className="text-slate-400 flex items-center gap-1">
+                      <Quote className="w-3 h-3" />
+                      引用 {entry.referenceCount} 次
+                    </span>
+                    <span className="text-tech-cyan-400">更新 {entry.lastUpdated}</span>
+                  </div>
+                </div>
+              ))}
             </div>
+          </div>
+        </div>
+
+        <div className="bg-deep-blue-800/60 backdrop-blur border border-white/5 rounded-2xl p-5 animate-fade-in-up stagger-5">
+          <div className="flex items-center gap-3 mb-2">
+            <Shield className="w-4 h-4 text-alert-orange-400" />
+            <h3 className="text-white font-semibold">案例质量检查清单（按案例汇总）</h3>
+            <span className="ml-auto text-xs text-slate-400">
+              共 {qualitySummaries.length} 条案例 · 缺失
+              <strong className="text-alert-orange-400 font-mono ml-1">{totalIssues}</strong>
+              项
+            </span>
+          </div>
+          <p className="text-slate-400 text-xs mb-4 ml-7">
+            一行展示同一条案例的所有缺失项，缺手册依据/放行结论/后续跟踪独立显示 ✅ / ❌
+          </p>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-slate-400 text-xs border-b border-white/5">
+                  <th className="pb-3 font-medium">缺失数</th>
+                  <th className="pb-3 font-medium">案例标题</th>
+                  <th className="pb-3 font-medium">故障代码</th>
+                  <th className="pb-3 font-medium text-right">引用数</th>
+                  <th className="pb-3 font-medium text-center">手册依据</th>
+                  <th className="pb-3 font-medium text-center">放行结论</th>
+                  <th className="pb-3 font-medium text-center">后续跟踪</th>
+                  <th className="pb-3 font-medium">更新日期</th>
+                </tr>
+              </thead>
+              <tbody>
+                {qualitySummaries.map((q) => (
+                  <tr
+                    key={q.entryId}
+                    className={`border-b border-white/5 hover:bg-white/[0.02] transition-colors ${
+                      q.missingCount >= 3 ? 'bg-alert-orange-500/[0.03]' : ''
+                    }`}
+                  >
+                    <td className="py-3">
+                      {q.missingCount > 0 ? (
+                        <span className={`inline-flex items-center justify-center min-w-8 h-7 px-2 rounded-full text-xs font-bold font-mono border ${
+                          q.missingCount >= 3
+                            ? 'bg-alert-orange-500/20 text-alert-orange-400 border-alert-orange-500/30'
+                            : q.missingCount >= 2
+                            ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+                            : 'bg-slate-500/20 text-slate-300 border-slate-500/30'
+                        }`}>
+                          {q.missingCount}
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center justify-center min-w-8 h-7 px-2 rounded-full text-xs font-bold font-mono bg-tech-cyan-500/15 text-tech-cyan-400 border border-tech-cyan-500/25">
+                          PASS
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3">
+                      <div className="font-medium text-slate-100 line-clamp-1 max-w-xs">{q.title}</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">{q.category}</div>
+                    </td>
+                    <td className="py-3 font-mono text-tech-cyan-400 text-xs">{q.faultCode}</td>
+                    <td className="py-3 text-right font-mono text-white">{q.referenceCount}</td>
+                    <td className="py-3 text-center">
+                      {q.hasManualReference ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-tech-cyan-400">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>齐备</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-alert-orange-400">
+                          <XCircle className="w-4 h-4" />
+                          <span>缺失</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 text-center">
+                      {q.hasReleaseConclusion ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-tech-cyan-400">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>齐备</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-alert-orange-400">
+                          <XCircle className="w-4 h-4" />
+                          <span>缺失</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 text-center">
+                      {q.hasFollowUp ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-tech-cyan-400">
+                          <CheckCircle2 className="w-4 h-4" />
+                          <span>齐备</span>
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs text-alert-orange-400">
+                          <XCircle className="w-4 h-4" />
+                          <span>缺失</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 text-xs text-slate-400">{q.lastUpdated}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
 
         <div className="bg-deep-blue-800/60 backdrop-blur border border-white/5 rounded-2xl p-5 animate-fade-in-up stagger-6">
           <div className="flex items-center gap-2 mb-4">
-            <AlertCircle className="w-4 h-4 text-alert-orange-400" />
-            <h3 className="text-white font-semibold">频繁引用但低成功率条目</h3>
-            <span className="text-xs text-slate-400 ml-2">（引用≥20次且成功率＜65%）</span>
+            <FileText className="w-4 h-4 text-tech-cyan-400" />
+            <h3 className="text-white font-semibold">高引用知识条目 TOP</h3>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            {lowSuccess.slice(0, 6).map((entry) => (
-              <div
-                key={entry.id}
-                className="p-4 rounded-xl border-2 border-alert-orange-500/30 bg-alert-orange-500/5 hover:bg-alert-orange-500/10 transition-colors"
-              >
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <span className="font-mono text-xs text-alert-orange-400 bg-alert-orange-500/15 px-2 py-0.5 rounded">
-                      {entry.faultCode}
-                    </span>
-                    <h4 className="text-white text-sm font-medium mt-2 line-clamp-1">{entry.title}</h4>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-alert-orange-400 font-bold font-mono text-xl">
-                      {entry.successRate}%
-                    </div>
-                    <div className="text-[10px] text-slate-500">成功率</div>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between pt-2 border-t border-white/5">
-                  <span className="text-xs text-slate-400">
-                    引用 <span className="text-white font-mono font-semibold">{entry.referenceCount}</span> 次
-                  </span>
-                  <span className="text-[10px] text-slate-500">更新于 {entry.lastUpdated}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="bg-deep-blue-800/60 backdrop-blur border border-white/5 rounded-2xl p-5 animate-fade-in-up stagger-7">
-          <div className="flex items-center justify-between mb-5">
-            <div className="flex items-center gap-2">
-              <FileText className="w-4 h-4 text-tech-cyan-400" />
-              <h3 className="text-white font-semibold">案例质量问题清单</h3>
-            </div>
-            <div className="flex gap-1.5">
-              {issueTabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key as any)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                    activeTab === tab.key
-                      ? 'bg-tech-cyan-500/20 text-tech-cyan-400 border border-tech-cyan-500/30'
-                      : 'text-slate-400 hover:text-white hover:bg-white/5'
-                  }`}
+          <div className="grid grid-cols-2 gap-4">
+            {entries
+              .slice()
+              .sort((a, b) => b.referenceCount - a.referenceCount)
+              .slice(0, 6)
+              .map((entry) => (
+                <div
+                  key={entry.id}
+                  className="p-4 rounded-xl bg-deep-blue-700/40 border border-white/5 hover:border-tech-cyan-500/20 transition-colors group"
                 >
-                  <tab.icon className="w-3.5 h-3.5" />
-                  {tab.label}
-                  <span
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                      activeTab === tab.key ? 'bg-tech-cyan-500/30 text-tech-cyan-300' : 'bg-slate-600/40 text-slate-300'
-                    }`}
-                  >
-                    {tab.count}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-left text-slate-400 text-xs border-b border-white/5">
-                  <th className="pb-3 font-medium">问题类型</th>
-                  <th className="pb-3 font-medium">案例标题</th>
-                  <th className="pb-3 font-medium">故障代码</th>
-                  <th className="pb-3 font-medium">手册依据</th>
-                  <th className="pb-3 font-medium">放行结论</th>
-                  <th className="pb-3 font-medium">后续跟踪</th>
-                  <th className="pb-3 font-medium">报告日期</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredIssues.slice(0, 10).map((issue) => (
-                  <tr key={issue.id} className="border-b border-white/5 hover:bg-white/[0.02] transition-colors">
-                    <td className="py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="px-2 py-0.5 rounded text-[10px] bg-deep-blue-600/80 text-slate-300 font-mono">
+                          {entry.ataChapter}
+                        </span>
+                        <span className="text-[10px] text-slate-500">{entry.category}</span>
+                      </div>
+                      <h4 className="text-sm font-medium text-slate-100 line-clamp-2 group-hover:text-white transition-colors">
+                        {entry.title}
+                      </h4>
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-2xl font-bold font-mono text-tech-cyan-400">
+                        {entry.referenceCount}
+                      </div>
+                      <div className="text-[10px] text-slate-500">引用</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 pt-3 border-t border-white/5 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">
+                      成功率{' '}
                       <span
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${
-                          issue.issueType === 'missing_manual'
-                            ? 'bg-alert-orange-500/15 text-alert-orange-400'
-                            : issue.issueType === 'missing_release'
-                            ? 'bg-yellow-500/15 text-yellow-400'
-                            : 'bg-blue-500/15 text-blue-400'
+                        className={`font-mono font-semibold ${
+                          entry.successRate >= 80
+                            ? 'text-tech-cyan-400'
+                            : entry.successRate >= 60
+                            ? 'text-yellow-400'
+                            : 'text-alert-orange-400'
                         }`}
                       >
-                        {issue.issueType === 'missing_manual' && '缺手册依据'}
-                        {issue.issueType === 'missing_release' && '缺放行结论'}
-                        {issue.issueType === 'missing_followup' && '缺后续跟踪'}
+                        {entry.successRate}%
                       </span>
-                    </td>
-                    <td className="py-3 text-slate-200 max-w-[300px] truncate">{issue.caseTitle}</td>
-                    <td className="py-3 font-mono text-tech-cyan-400">{issue.faultCode}</td>
-                    <td className="py-3">
-                      {issue.issueType !== 'missing_manual' ? (
-                        <CheckCircle2 className="w-4 h-4 text-tech-cyan-400" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-alert-orange-400" />
-                      )}
-                    </td>
-                    <td className="py-3">
-                      {issue.issueType !== 'missing_release' ? (
-                        <CheckCircle2 className="w-4 h-4 text-tech-cyan-400" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-alert-orange-400" />
-                      )}
-                    </td>
-                    <td className="py-3">
-                      {issue.issueType !== 'missing_followup' ? (
-                        <CheckCircle2 className="w-4 h-4 text-tech-cyan-400" />
-                      ) : (
-                        <XCircle className="w-4 h-4 text-alert-orange-400" />
-                      )}
-                    </td>
-                    <td className="py-3 text-slate-400 text-xs">{issue.reportedDate}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </span>
+                    <span className="text-slate-500">{entry.lastUpdated}</span>
+                  </div>
+                </div>
+              ))}
           </div>
         </div>
       </div>

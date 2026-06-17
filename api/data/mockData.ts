@@ -44,6 +44,8 @@ const ataChapters: OptionItem[] = [
 
 const seasons = ['春季', '夏季', '秋季', '冬季'];
 
+const categories = ['经验案例', '故障分析', '快速排故', '疑难案例', '预防措施'];
+
 const faultCodes = [
   { code: 'F2101', desc: '空调组件过热警告', ata: 'ATA21', actions: ['更换温度传感器', '重置ACSC', '检查ACM'] },
   { code: 'F2102', desc: '座舱压力异常', ata: 'ATA21', actions: ['检查 outflow valve', '更换CPC', '清洁压力传感器'] },
@@ -112,6 +114,8 @@ export function generateKnowledgeEntries(count = 55): KnowledgeEntry[] {
       id: `K${String(i + 1).padStart(4, '0')}`,
       title: `${fault.desc} - 排故经验分享`,
       faultCode: fault.code,
+      ataChapter: fault.ata,
+      category: randomChoice(categories),
       referenceCount: randomInt(5, 120),
       successRate: randomFloat(35, 98),
       lastUpdated: generateDate(30),
@@ -124,31 +128,52 @@ export function generateKnowledgeEntries(count = 55): KnowledgeEntry[] {
 }
 
 export function generateReviewTasks(count = 32): ReviewTask[] {
-  const engineers = ['张伟', '李明', '王强', '刘洋', '陈刚', '赵磊', null];
+  const engineers = ['wang_ming', 'li_wei', 'zhang_hao', 'chen_jun', 'liu_qiang', 'zhou_le', null];
   const statuses: Array<'pending' | 'in_progress' | 'completed'> = ['pending', 'in_progress', 'completed'];
   const tasks: ReviewTask[] = [];
+
+  function generateDueDate(status: string): string {
+    const d = new Date();
+    if (status === 'completed') d.setDate(d.getDate() - randomInt(1, 8));
+    else if (status === 'in_progress') d.setDate(d.getDate() + randomInt(1, 5));
+    else d.setDate(d.getDate() + randomInt(3, 15));
+    return d.toISOString().split('T')[0];
+  }
+
+  function generateCompletedAt(): string | null {
+    const d = new Date();
+    d.setDate(d.getDate() - randomInt(0, 7));
+    return d.toISOString().split('T')[0];
+  }
 
   for (let i = 0; i < count; i++) {
     const fault = randomChoice(faultCodes);
     const isRepeat = i % 2 === 0;
     const status = randomChoice(statuses);
     const assignee = status === 'pending' ? null : randomChoice(engineers);
+    const isCompleted = status === 'completed';
+    const trainingSent = isCompleted && Math.random() > 0.6;
     tasks.push({
       id: `R${String(i + 1).padStart(4, '0')}`,
-      type: isRepeat ? 'repeat_fault' : 'timeout_troubleshoot',
+      type: isRepeat ? 'repeat' : 'timeout',
       faultCode: fault.code,
-      faultDescription: fault.desc,
+      title: fault.desc,
+      ataChapter: fault.ata,
       occurrenceCount: isRepeat ? randomInt(5, 18) : randomInt(2, 8),
-      avgDowntimeHours: randomFloat(isRepeat ? 3 : 5, isRepeat ? 8 : 14),
+      avgDowntime: randomFloat(isRepeat ? 3 : 5, isRepeat ? 8 : 14),
       thresholdHours: isRepeat ? undefined : 4,
       assignee,
       status,
-      rootCauseAnalysis: status === 'completed' ? '经排查，主要原因为传感器老化导致信号漂移，已更换新型号传感器并完成校准。' : 
-                        status === 'in_progress' ? '正在进行深入分析...' : null,
-      troubleshootingTipRevision: status === 'completed' ? '已更新排故提示：增加传感器阻值测量步骤，建议每500FH预防性更换。' : null,
-      trainingReminder: status === 'completed' && Math.random() > 0.6,
+      rootCause: isCompleted ? '经排查，主要原因为传感器老化导致信号漂移，已更换新型号传感器并完成校准。' :
+                  status === 'in_progress' ? '正在进行深入分析...' : null,
+      tipRevision: isCompleted ? '已更新排故提示：增加传感器阻值测量步骤，建议每500FH预防性更换。' : null,
+      trainingReminder: isCompleted ? {
+        content: trainingSent ? '针对机电维修班组组织专项培训，重点讲解该传感器阻值测量与提前识别方法。' : '',
+        sent: trainingSent,
+      } : { content: '', sent: false },
       createdAt: generateDate(14),
-      dueDate: status === 'completed' ? generateDate(3) : status === 'in_progress' ? generateDate(-3) : generateDate(-10),
+      dueDate: generateDueDate(status),
+      completedAt: isCompleted ? generateCompletedAt() : null,
     });
   }
   return tasks;
@@ -160,7 +185,14 @@ export const optionData = {
   ataChapters,
   seasons: seasons.map(s => ({ value: s, label: s })),
   faultCodes: faultCodes.map(f => ({ value: f.code, label: `${f.code} - ${f.desc}` })),
-  engineers: ['张伟', '李明', '王强', '刘洋', '陈刚', '赵磊', '孙浩', '周鹏'].map(e => ({ value: e, label: e })),
+  engineers: [
+    { value: 'wang_ming', label: '王明（机电）' },
+    { value: 'li_wei', label: '李伟（结构）' },
+    { value: 'zhang_hao', label: '张浩（电子）' },
+    { value: 'chen_jun', label: '陈军（动力）' },
+    { value: 'liu_qiang', label: '刘强（系统）' },
+    { value: 'zhou_le', label: '周乐（机上娱乐）' },
+  ],
 };
 
 export const mockFaultRecords = generateFaultRecords();
