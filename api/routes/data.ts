@@ -20,6 +20,8 @@ import {
   addTaskFromCaseQuality,
   getTaskWorkbench,
   getTopFaultByAta,
+  updateTaskWorkbench,
+  getFaultCodeAggregate,
 } from '../services/dataService.js';
 
 const router = Router();
@@ -88,6 +90,16 @@ router.get('/faults/top-by-ata', (req: Request, res: Response) => {
   res.json({ success: true, data: result });
 });
 
+router.get('/faults/aggregate/:faultCode', (req: Request, res: Response) => {
+  const { faultCode } = req.params;
+  const result = getFaultCodeAggregate(faultCode);
+  if (!result) {
+    res.status(404).json({ success: false, error: 'Fault code not found' });
+    return;
+  }
+  res.json({ success: true, data: result });
+});
+
 router.get('/knowledge/entries', (_req: Request, res: Response) => {
   res.json({ success: true, data: getKnowledgeEntries() });
 });
@@ -146,6 +158,21 @@ router.post('/review/add-from-case-quality', (req: Request, res: Response) => {
 router.get('/review/workbench/:taskId', (req: Request, res: Response) => {
   const { taskId } = req.params;
   const result = getTaskWorkbench(parseFilters(req), taskId);
+  if (!result) {
+    res.status(404).json({ success: false, error: 'Task not found' });
+    return;
+  }
+  res.json({ success: true, data: result });
+});
+
+router.put('/review/workbench/:taskId', (req: Request, res: Response) => {
+  const { taskId } = req.params;
+  const { reviewConclusion, adoptedActions, knowledgeDrafts } = req.body;
+  const result = updateTaskWorkbench(taskId, {
+    reviewConclusion,
+    adoptedActions,
+    knowledgeDrafts,
+  });
   if (!result) {
     res.status(404).json({ success: false, error: 'Task not found' });
     return;

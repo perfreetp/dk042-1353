@@ -80,6 +80,17 @@ export const api = {
     }),
   getTaskWorkbench: (params: FilterParams, taskId: string) =>
     request<any>(`/review/workbench/${taskId}${buildQs(params)}`),
+  updateTaskWorkbench: (taskId: string, data: {
+    reviewConclusion?: string;
+    adoptedActions?: string[];
+    knowledgeDrafts?: { title: string; content: string; category: string }[];
+  }) =>
+    request<any>(`/review/workbench/${taskId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+  getFaultCodeAggregate: (faultCode: string) =>
+    request<any>(`/faults/aggregate/${faultCode}`),
   assignTask: (id: string, assignee: string, dueDate: string) =>
     request<any>(`/review/tasks/${id}/assign`, {
       method: 'POST',

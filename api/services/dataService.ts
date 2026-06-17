@@ -14,6 +14,7 @@ import type {
   CandidateReviewTask,
   TaskWorkbenchData,
   InitiateReviewResult,
+  FaultCodeAggregate,
 } from '../../shared/types.js';
 
 function filterRecords(records: FaultRecord[], filters: Partial<FilterState>): FaultRecord[] {
@@ -373,6 +374,7 @@ export function generateCandidateTasks(
 }
 
 let customAddedTasks: ReviewTask[] = [];
+const addedCandidateIds = new Set<string>();
 
 export function getReviewTasks(): ReviewTask[] {
   return [...mockReviewTasks, ...customAddedTasks];
@@ -426,7 +428,19 @@ export function addTasksFromCandidates(candidates: CandidateReviewTask[]): Revie
   const plus7 = new Date();
   plus7.setDate(plus7.getDate() + 7);
   const defaultDue = plus7.toISOString().split('T')[0];
-  const newTasks: ReviewTask[] = candidates.map((c, i) => ({
+
+  const allTasks = getReviewTasks();
+  const existingCodes = new Set(allTasks.map(t => t.faultCode));
+
+  const toAdd = candidates.filter(c => {
+    if (existingCodes.has(c.faultCode)) return false;
+    if (addedCandidateIds.has(c.candidateId)) return false;
+    return true;
+  });
+
+  if (toAdd.length === 0) return [];
+
+  const newTasks: ReviewTask[] = toAdd.map((c, i) => ({
     id: `N${String(customAddedTasks.length + i + 1).padStart(4, '0')}`,
     type: c.type,
     faultCode: c.faultCode,
@@ -445,7 +459,13 @@ export function addTasksFromCandidates(candidates: CandidateReviewTask[]): Revie
     completedAt: null,
     source: 'candidate',
     reviewReason: c.reason,
+    reviewConclusion: null,
+    adoptedActions: [],
+    knowledgeDrafts: [],
+    filterSnapshot: null,
   }));
+
+  toAdd.forEach(c => addedCandidateIds.add(c.candidateId));
   customAddedTasks = [...customAddedTasks, ...newTasks];
   return newTasks;
 }
@@ -493,6 +513,18 @@ export function initiateReviewFromDrilldown(
     completedAt: null,
     source: 'drilldown',
     reviewReason: reason || drillDown.reviewReason,
+    reviewConclusion: null,
+    adoptedActions: [],
+    knowledgeDrafts: [],
+    filterSnapshot: {
+      dateStart: filters.dateRange?.start,
+      dateEnd: filters.dateRange?.end,
+      aircraftType: filters.aircraftType || null,
+      base: filters.base || null,
+      ataChapter: filters.ataChapter || null,
+      season: filters.season || null,
+      faultCode: filters.faultCode || null,
+    },
   };
   customAddedTasks = [...customAddedTasks, newTask];
   return { created: true, task: newTask, message: `已从故障钻取发起复盘任务 ${newTask.id}` };
@@ -548,6 +580,10 @@ export function addTaskFromCaseQuality(entryId: string): InitiateReviewResult {
     completedAt: null,
     source: 'case_quality',
     reviewReason: `案例质量缺失 ${missingCount} 项（手册依据${entry.hasManualReference ? '✓' : '✗'} / 放行结论${entry.hasReleaseConclusion ? '✓' : '✗'} / 后续跟踪${entry.hasFollowUp ? '✓' : '✗'}），引用次数 ${entry.referenceCount}，需复盘整改`,
+    reviewConclusion: null,
+    adoptedActions: [],
+    knowledgeDrafts: [],
+    filterSnapshot: null,
   };
   customAddedTasks = [...customAddedTasks, newTask];
   return { created: true, task: newTask, message: `已将案例 ${entryId} 加入复盘清单（任务 ${newTask.id}）` };
@@ -617,6 +653,52 @@ export function getTopFaultByAta(filters: Partial<FilterState>, ataChapter: stri
     .sort((a, b) => b.count - a.count);
 
   return top[0] || null;
+}
+
+export function updateTaskWorkbench(
+  taskId: string,
+  updates: {
+    reviewConclusion?: string;
+    adoptedActions?: string[];
+    knowledgeDrafts?: { title: string; content: string; category: string }[];
+  }
+): ReviewTask | null {
+  const allTasks = getReviewTasks();
+  const task = allTasks.find(t => t.id === taskId);
+  if (!task) return null;
+  if (updates.reviewConclusion !== undefined) task.reviewConclusion = updates.reviewConclusion;
+  if (updates.adoptedActions !== undefined) task.adoptedActions = updates.adoptedActions;
+  if (updates.knowledgeDrafts !== undefined) task.knowledgeDrafts = updates.knowledgeDrafts;
+  return task;
+}
+
+export function getFaultCodeAggregate(faultCode: string): FaultCodeAggregate | null {
+  const records = mockFaultRecords.filter(r => r.faultCode === faultCode);
+  if (records.length === 0) return null;
+
+  const relatedCases = mockKnowledgeEntries.filter(e => e.faultCode === faultCode);
+  const lowSuccessCases = relatedCases.filter(e => e.successRate < 60);
+  const qualityIssueCases = getCaseQualitySummaries().filter(q => q.faultCode === faultCode);
+  const allTasks = getReviewTasks();
+  const reviewTask = allTasks.find(t => t.faultCode === faultCode) || null;
+
+  const totalCount = records.length;
+  const avgDowntime = totalCount > 0
+    ? parseFloat((records.reduce((s, r) => s + r.downtimeHours, 0) / totalCount).toFixed(1))
+    : 0;
+
+  return {
+    faultCode,
+    faultDescription: records[0].faultDescription,
+    ataChapter: records[0].ataChapter,
+    occurrenceCount: totalCount,
+    avgDowntime,
+    relatedCases,
+    lowSuccessCases,
+    qualityIssueCases,
+    reviewTask,
+    hasActiveReview: reviewTask !== null && reviewTask.status !== 'completed',
+  };
 }
 
 export function getOptions() {

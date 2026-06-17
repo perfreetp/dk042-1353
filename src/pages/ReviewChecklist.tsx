@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import Layout from '@/components/Layout';
 import StatCard from '@/components/StatCard';
 import { api } from '@/lib/api';
@@ -35,6 +36,8 @@ import {
   Wrench,
   Rocket,
   MonitorCog,
+  Trash2,
+  Save,
 } from 'lucide-react';
 import type { ReviewTask, CandidateReviewTask, TaskWorkbenchData } from '../../shared/types';
 import {
@@ -54,6 +57,7 @@ type TabView = 'active' | 'candidates' | 'closed';
 
 export default function ReviewChecklist() {
   const { filters } = useAppStore();
+  const [searchParams] = useSearchParams();
   const [tasks, setTasks] = useState<ReviewTask[]>([]);
   const [candidates, setCandidates] = useState<CandidateReviewTask[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -64,10 +68,15 @@ export default function ReviewChecklist() {
   const [timeoutThreshold, setTimeoutThreshold] = useState(5);
   const [selectedCandidates, setSelectedCandidates] = useState<Set<string>>(new Set());
   const [loadingCandidates, setLoadingCandidates] = useState(false);
+  const [addingCandidates, setAddingCandidates] = useState(false);
 
   const [workbenchTaskId, setWorkbenchTaskId] = useState<string | null>(null);
   const [workbenchData, setWorkbenchData] = useState<TaskWorkbenchData | null>(null);
   const [loadingWorkbench, setLoadingWorkbench] = useState(false);
+  const [savingWorkbench, setSavingWorkbench] = useState(false);
+  const [adoptedActionsSet, setAdoptedActionsSet] = useState<Set<string>>(new Set());
+  const [reviewConclusionText, setReviewConclusionText] = useState('');
+  const [knowledgeDraftsState, setKnowledgeDraftsState] = useState<{ title: string; content: string; category: string }[]>([]);
 
   const baseParams = {
     aircraftType: filters.aircraftType,
@@ -128,6 +137,9 @@ export default function ReviewChecklist() {
     try {
       const data = await api.getTaskWorkbench(baseParams, taskId);
       setWorkbenchData(data);
+      setAdoptedActionsSet(new Set(data.task.adoptedActions || []));
+      setReviewConclusionText(data.task.reviewConclusion || '');
+      setKnowledgeDraftsState(data.task.knowledgeDrafts || []);
     } finally {
       setLoadingWorkbench(false);
     }
@@ -136,7 +148,58 @@ export default function ReviewChecklist() {
   function closeWorkbench() {
     setWorkbenchTaskId(null);
     setWorkbenchData(null);
+    setAdoptedActionsSet(new Set());
+    setReviewConclusionText('');
+    setKnowledgeDraftsState([]);
   }
+
+  function toggleAdoptedAction(action: string) {
+    const s = new Set(adoptedActionsSet);
+    if (s.has(action)) s.delete(action);
+    else s.add(action);
+    setAdoptedActionsSet(s);
+  }
+
+  function addKnowledgeDraft() {
+    setKnowledgeDraftsState([...knowledgeDraftsState, { title: '', content: '', category: '故障排故' }]);
+  }
+
+  function updateKnowledgeDraft(index: number, field: 'title' | 'content' | 'category', value: string) {
+    const drafts = [...knowledgeDraftsState];
+    drafts[index][field] = value;
+    setKnowledgeDraftsState(drafts);
+  }
+
+  function removeKnowledgeDraft(index: number) {
+    const drafts = knowledgeDraftsState.filter((_, i) => i !== index);
+    setKnowledgeDraftsState(drafts);
+  }
+
+  async function handleSaveWorkbench() {
+    if (!workbenchTaskId || savingWorkbench) return;
+    setSavingWorkbench(true);
+    try {
+      await api.updateTaskWorkbench(workbenchTaskId, {
+        reviewConclusion: reviewConclusionText,
+        adoptedActions: Array.from(adoptedActionsSet),
+        knowledgeDrafts: knowledgeDraftsState,
+      });
+      loadTasks();
+      closeWorkbench();
+    } finally {
+      setSavingWorkbench(false);
+    }
+  }
+
+  useEffect(() => {
+    const openWorkbenchParam = searchParams.get('openWorkbench');
+    if (openWorkbenchParam && tasks.length > 0) {
+      const taskExists = tasks.some((t) => t.id === openWorkbenchParam);
+      if (taskExists) {
+        openWorkbench(openWorkbenchParam);
+      }
+    }
+  }, [tasks, searchParams]);
 
   function sourceLabel(source: ReviewTask['source']) {
     const map = {
@@ -165,13 +228,18 @@ export default function ReviewChecklist() {
   }
 
   async function handleAddCandidates() {
-    if (selectedCandidates.size === 0) return;
-    const toAdd = candidates.filter((c) => selectedCandidates.has(c.candidateId));
-    await api.addCandidates(toAdd);
-    setSelectedCandidates(new Set());
-    loadTasks();
-    refreshCandidates();
-    setTab('active');
+    if (selectedCandidates.size === 0 || addingCandidates) return;
+    setAddingCandidates(true);
+    try {
+      const toAdd = candidates.filter((c) => selectedCandidates.has(c.candidateId));
+      await api.addCandidates(toAdd);
+      setSelectedCandidates(new Set());
+      loadTasks();
+      refreshCandidates();
+      setTab('active');
+    } finally {
+      setAddingCandidates(false);
+    }
   }
 
   function toggleCandidate(id: string) {
@@ -388,7 +456,7 @@ export default function ReviewChecklist() {
               </div>
               <button
                 onClick={handleAddCandidates}
-                disabled={selectedCandidates.size === 0}
+                disabled={selectedCandidates.size === 0 || addingCandidates}
                 className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-tech-cyan-500 to-tech-cyan-600 text-white shadow-lg shadow-tech-cyan-500/20 hover:shadow-tech-cyan-500/30 hover:from-tech-cyan-400 hover:to-tech-cyan-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
               >
                 <Plus className="w-4 h-4" />
@@ -524,7 +592,7 @@ export default function ReviewChecklist() {
                           <span className="font-mono text-tech-cyan-400 text-sm">{task.faultCode}</span>
                           <span className="truncate">{task.title}</span>
                         </h4>
-                        <div className="text-xs text-slate-400 mt-1 flex items-center gap-4">
+                        <div className="text-xs text-slate-400 mt-1 flex items-center gap-4 flex-wrap">
                           <span className="flex items-center gap-1">
                             <AlertCircle className="w-3 h-3 text-alert-orange-400" />
                             {task.occurrenceCount} 次故障 · 平均 {task.avgDowntime}h 停场
@@ -533,7 +601,25 @@ export default function ReviewChecklist() {
                             <ListChecks className="w-3 h-3 text-slate-500" />
                             {task.ataChapter}
                           </span>
+                          {(task.adoptedActions?.length || 0) > 0 && (
+                            <span className="flex items-center gap-1 text-tech-cyan-400">
+                              <CheckCircle2 className="w-3 h-3" />
+                              采纳 {task.adoptedActions?.length || 0} 项动作
+                            </span>
+                          )}
+                          {(task.knowledgeDrafts?.length || 0) > 0 && (
+                            <span className="flex items-center gap-1 text-yellow-400">
+                              <BookOpen className="w-3 h-3" />
+                              {task.knowledgeDrafts?.length || 0} 条知识草稿
+                            </span>
+                          )}
                         </div>
+                        {task.reviewConclusion && (
+                          <div className="mt-2 text-xs text-slate-400 line-clamp-2">
+                            <span className="text-slate-500">复盘结论：</span>
+                            <span className="text-slate-300">{task.reviewConclusion}</span>
+                          </div>
+                        )}
                       </div>
                       <div className="flex items-center gap-4 flex-shrink-0 text-xs">
                         <button
@@ -769,9 +855,21 @@ export default function ReviewChecklist() {
                             <Flame className="w-3.5 h-3.5 text-alert-orange-400" />
                             处理 {task.occurrenceCount} 次故障 · 平均 {task.avgDowntime}h
                           </span>
+                          {(task.adoptedActions?.length || 0) > 0 && (
+                            <span className="flex items-center gap-1.5 text-tech-cyan-400">
+                              <CheckCircle2 className="w-3.5 h-3.5" />
+                              采纳 {task.adoptedActions?.length || 0} 项动作
+                            </span>
+                          )}
+                          {(task.knowledgeDrafts?.length || 0) > 0 && (
+                            <span className="flex items-center gap-1.5 text-yellow-400">
+                              <BookOpen className="w-3.5 h-3.5" />
+                              {task.knowledgeDrafts?.length || 0} 条知识草稿
+                            </span>
+                          )}
                         </div>
 
-                        <div className="grid grid-cols-3 gap-4">
+                        <div className="grid grid-cols-4 gap-4">
                           <div className="p-3.5 rounded-xl bg-deep-blue-700/40 border border-white/5">
                             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-2 font-medium">
                               <FileText className="w-3 h-3 text-tech-cyan-400" />
@@ -810,6 +908,15 @@ export default function ReviewChecklist() {
                               {task.trainingReminder?.content || (
                                 <span className="text-slate-500">未填写</span>
                               )}
+                            </p>
+                          </div>
+                          <div className="p-3.5 rounded-xl bg-deep-blue-700/40 border border-white/5">
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 mb-2 font-medium">
+                              <Target className="w-3 h-3 text-tech-cyan-400" />
+                              复盘结论
+                            </div>
+                            <p className="text-sm text-slate-200 leading-relaxed line-clamp-3">
+                              {task.reviewConclusion || <span className="text-slate-500">未填写</span>}
                             </p>
                           </div>
                         </div>
@@ -991,17 +1098,107 @@ export default function ReviewChecklist() {
                       <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
                         <Wrench className="w-4 h-4 text-tech-cyan-400" />
                         建议排故动作（按历史成功率排序）
+                        <span className="ml-auto text-xs font-normal text-slate-400">
+                          已采纳 <strong className="text-tech-cyan-400">{adoptedActionsSet.size}</strong> 项
+                        </span>
                       </h4>
                       {workbenchData.suggestedActions.length === 0 ? (
                         <p className="text-sm text-slate-500 text-center py-4">暂无建议动作</p>
                       ) : (
                         <div className="space-y-2">
                           {workbenchData.suggestedActions.map((action, i) => (
-                            <div key={i} className="flex items-center gap-3 p-3 rounded-lg bg-deep-blue-800/50 border border-white/5">
+                            <div key={i} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${
+                              adoptedActionsSet.has(action)
+                                ? 'bg-tech-cyan-500/10 border-tech-cyan-500/30'
+                                : 'bg-deep-blue-800/50 border-white/5'
+                            }`}>
+                              <input
+                                type="checkbox"
+                                className="w-4 h-4 rounded accent-[#00D4AA] flex-shrink-0"
+                                checked={adoptedActionsSet.has(action)}
+                                onChange={() => toggleAdoptedAction(action)}
+                              />
                               <span className="w-6 h-6 rounded-full bg-tech-cyan-500/15 text-tech-cyan-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
                                 {i + 1}
                               </span>
-                              <span className="text-sm text-slate-200">{action}</span>
+                              <span className={`text-sm ${adoptedActionsSet.has(action) ? 'text-tech-cyan-300' : 'text-slate-200'}`}>{action}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-deep-blue-700/30 border border-white/5">
+                      <h4 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+                        <FileText className="w-4 h-4 text-tech-cyan-400" />
+                        复盘结论
+                      </h4>
+                      <textarea
+                        rows={4}
+                        className="w-full bg-deep-blue-800 border border-white/10 rounded-xl px-4 py-3 text-sm text-slate-200 focus:outline-none focus:border-tech-cyan-500/50 resize-none"
+                        placeholder="总结本次复盘的核心结论、经验教训和改进方向..."
+                        value={reviewConclusionText}
+                        onChange={(e) => setReviewConclusionText(e.target.value)}
+                      />
+                    </div>
+
+                    <div className="p-5 rounded-2xl bg-deep-blue-700/30 border border-white/5">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-sm font-semibold text-white flex items-center gap-2">
+                          <BookOpen className="w-4 h-4 text-tech-cyan-400" />
+                          待修订知识条目草稿
+                          <span className="ml-2 text-xs font-normal text-slate-400">
+                            ({knowledgeDraftsState.length} 条)
+                          </span>
+                        </h4>
+                        <button
+                          onClick={addKnowledgeDraft}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-tech-cyan-500/10 text-tech-cyan-400 border border-tech-cyan-500/20 hover:bg-tech-cyan-500/20 transition-colors"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          添加草稿
+                        </button>
+                      </div>
+                      {knowledgeDraftsState.length === 0 ? (
+                        <p className="text-sm text-slate-500 text-center py-4">暂无知识草稿，点击上方按钮添加</p>
+                      ) : (
+                        <div className="space-y-4">
+                          {knowledgeDraftsState.map((draft, index) => (
+                            <div key={index} className="p-4 rounded-xl bg-deep-blue-800/50 border border-white/5 space-y-3">
+                              <div className="flex items-center gap-3">
+                                <GripVertical className="w-4 h-4 text-slate-600 flex-shrink-0" />
+                                <select
+                                  className="bg-deep-blue-800 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-tech-cyan-500/50"
+                                  value={draft.category}
+                                  onChange={(e) => updateKnowledgeDraft(index, 'category', e.target.value)}
+                                >
+                                  <option value="故障排故">故障排故</option>
+                                  <option value="维护手册">维护手册</option>
+                                  <option value="放行标准">放行标准</option>
+                                  <option value="培训资料">培训资料</option>
+                                  <option value="经验总结">经验总结</option>
+                                </select>
+                                <button
+                                  onClick={() => removeKnowledgeDraft(index)}
+                                  className="ml-auto p-1.5 rounded-lg text-slate-400 hover:text-alert-orange-400 hover:bg-alert-orange-500/10 transition-colors"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                              <input
+                                type="text"
+                                className="w-full bg-deep-blue-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-tech-cyan-500/50"
+                                placeholder="知识条目标题..."
+                                value={draft.title}
+                                onChange={(e) => updateKnowledgeDraft(index, 'title', e.target.value)}
+                              />
+                              <textarea
+                                rows={3}
+                                className="w-full bg-deep-blue-800 border border-white/10 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-tech-cyan-500/50 resize-none"
+                                placeholder="知识条目内容..."
+                                value={draft.content}
+                                onChange={(e) => updateKnowledgeDraft(index, 'content', e.target.value)}
+                              />
                             </div>
                           ))}
                         </div>
@@ -1017,6 +1214,23 @@ export default function ReviewChecklist() {
                         </div>
                       </div>
                     )}
+
+                    <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
+                      <button
+                        onClick={closeWorkbench}
+                        className="px-5 py-2.5 rounded-xl text-sm font-medium bg-deep-blue-700/60 text-slate-300 border border-white/10 hover:bg-deep-blue-700 hover:text-white transition-colors"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={handleSaveWorkbench}
+                        disabled={savingWorkbench}
+                        className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-medium bg-gradient-to-r from-tech-cyan-500 to-tech-cyan-600 text-white shadow-lg shadow-tech-cyan-500/20 hover:shadow-tech-cyan-500/30 hover:from-tech-cyan-400 hover:to-tech-cyan-500 transition-all disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none"
+                      >
+                        <Save className="w-4 h-4" />
+                        {savingWorkbench ? '保存中...' : '保存分析结果'}
+                      </button>
+                    </div>
                   </>
                 ) : null}
               </div>

@@ -175,6 +175,17 @@ export function generateReviewTasks(count = 32): ReviewTask[] {
       dueDate: generateDueDate(status),
       completedAt: isCompleted ? generateCompletedAt() : null,
       source: 'manual',
+      reviewConclusion: isCompleted ? '本次复盘确认故障根因为传感器批次质量问题，已协调供应商更换批次。' +
+        '短期措施：对在役该批次传感器进行普查；长期措施：修订排故手册增加提前预警判断条件。' : null,
+      adoptedActions: isCompleted ? ['更换温度传感器', '检查ACM工作状态', '清洁压力传感器'] : [],
+      knowledgeDrafts: isCompleted ? [
+        {
+          title: `${fault.desc} - 改进版排故流程`,
+          content: '1. 首先测量传感器阻值，若超出公差范围直接更换；2. 检查连接线路；3. 执行校准程序。',
+          category: '快速排故',
+        },
+      ] : [],
+      filterSnapshot: null,
     });
   }
   return tasks;

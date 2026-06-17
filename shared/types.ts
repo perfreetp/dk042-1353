@@ -47,6 +47,18 @@ export interface ReviewTask {
   completedAt: string | null;
   source: 'manual' | 'candidate' | 'drilldown' | 'case_quality';
   reviewReason?: string;
+  reviewConclusion?: string | null;
+  adoptedActions?: string[];
+  knowledgeDrafts?: { title: string; content: string; category: string }[];
+  filterSnapshot?: {
+    dateStart?: string;
+    dateEnd?: string;
+    aircraftType?: string | null;
+    base?: string | null;
+    ataChapter?: string | null;
+    season?: string | null;
+    faultCode?: string | null;
+  } | null;
 }
 
 export interface TaskWorkbenchData {
@@ -60,6 +72,19 @@ export interface InitiateReviewResult {
   created: boolean;
   task: ReviewTask | null;
   message: string;
+}
+
+export interface FaultCodeAggregate {
+  faultCode: string;
+  faultDescription: string;
+  ataChapter: string;
+  occurrenceCount: number;
+  avgDowntime: number;
+  relatedCases: KnowledgeEntry[];
+  lowSuccessCases: KnowledgeEntry[];
+  qualityIssueCases: CaseQualitySummary[];
+  reviewTask: ReviewTask | null;
+  hasActiveReview: boolean;
 }
 
 export interface FilterState {

@@ -140,10 +140,10 @@ export default function FaultHeatmap() {
         drillDown.reviewReason
       );
       setInitiateMsg(result.message);
-      if (result.created) {
+      if (result.task) {
         setTimeout(() => {
           closeModal();
-          navigate('/review-checklist');
+          navigate(`/review-checklist?openWorkbench=${result.task.id}`);
         }, 1200);
       }
     } finally {
